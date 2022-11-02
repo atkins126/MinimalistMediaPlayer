@@ -13,7 +13,7 @@ Control | Action
 ------- | ------
 `ALT-SPACEBAR`			| Activate the system menu to get to the About Box
 `ESCape`				| exit Fullscreen mode, or exit the app if in window mode
-`SPACEBAR` 				| pause/resume playback (also left mouse double-click on the video)
+`SPACEBAR` 				| pause/resume playback (also left mouse double-click on the video, or right mouse single-click)
 `Ctrl-Up Arrow` 		| increase playback speed 10%
 `/`						| increase playback speed 10%
 `Ctrl-Down Arrow`		| decrease playback speed 10%
@@ -60,6 +60,7 @@ Control | Action
 `1`						| reset the playback speed to normal, i.e. [1]00%
 `2`						| resize the window so that 2 instances of the application can be placed side-by-side
 `4`						| resize to a mini-window in the top-right corner of the screen
+`Ctrl-4`				| move to top-right corner of the screen but maintain current window size
 `5`						| save/bookmark the current media file timestamp to an INI file
 `6`						| retrieve a saved/bookmarked media file timestamp from an INI file and continue playback from that point
 `7`						| delete any previously saved/bookmarked media file timestamp
@@ -74,6 +75,8 @@ Zoom|
 `Ctrl-DOWN ARROW`		| when zoomed in/out, move video DOWN inside the window
 Additional |
 `Left Click on the window background and hold`	| the window can be dragged/repositioned without a window caption title bar
+`Left double-click video` | pause / resume playback
+`Right single-click video` | pause / resume playback
 
 Media File Formats
 ------------------

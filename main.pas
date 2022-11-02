@@ -49,6 +49,7 @@ type
     procedure FormActivate(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure FormCreate(Sender: TObject);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure FormResize(Sender: TObject);
     procedure lblMuteUnmuteClick(Sender: TObject);
@@ -68,12 +69,11 @@ type
     procedure WMSysCommand(var Message : TWMSysCommand); Message WM_SYSCOMMAND;
     procedure tmrMediaCaptionTimer(Sender: TObject);
   private
-    function  addMenuItem: boolean;
-    function  setupProgressBar: boolean;
-    function  showAboutBox: boolean;
   protected
   public
     // UI Functions only - application logic is in TFX
+    function  addMenuItem: boolean;
+    function  fakeSystemMenu: boolean;
     function  hideLabels: boolean;
     function  repositionLabels: boolean;
     function  repositionTimeDisplay: boolean;
@@ -81,6 +81,10 @@ type
     function  resizeWindow1: boolean;
     function  resizeWindow2: boolean;
     function  resizeWindow3(Shift: TShiftState): boolean;
+    function  setupProgressBar: boolean;
+    function  showAboutBox: boolean;
+    function  showHelpWindow(create: boolean = TRUE): boolean;
+    function  showHideHelp: boolean;
     function  showInfo(aInfo: string): boolean;
     function  showMediaCaption: boolean;
     function  toggleControls(Shift: TShiftState): boolean;
@@ -94,10 +98,11 @@ implementation
 uses
   WinApi.CommCtrl,  WinApi.uxTheme,
   System.SysUtils, System.Generics.Collections, System.Math, System.Variants,
-  FormInputBox, MMSystem, Mixer, VCL.Graphics, clipbrd, System.IOUtils, ShellAPI, FormAbout;
+  FormInputBox, MMSystem, Mixer, VCL.Graphics, clipbrd, System.IOUtils, ShellAPI, FormAbout, FormHelp;
 
 const
-  MENU_ID     = 1001;
+  MENU_ABOUT_ID = 1001;
+  MENU_HELP_ID  = 1002;
 
 type
   TGV = class                        // Global [application-wide] Variables
@@ -111,6 +116,7 @@ type
     FMute:          boolean;
     FnewMediaFile:  boolean;
     FSampling:      boolean;
+    FShowingHelp:   boolean;
     FStartUp:       boolean;
     FZoomed:        boolean;
     function  getExePath: string;
@@ -134,6 +140,7 @@ type
     property    playIx:             integer       read FplayIx        write FplayIx;
     property    playlist:           TList<string> read Fplaylist;
     property    sampling:           boolean       read FSampling      write FSampling;
+    property    showingHelp:        boolean       read FShowingHelp   write FShowingHelp;
     property    startup:            boolean       read FStartUp       write FStartUp;
     property    zoomed:             boolean       read FZoomed        write FZoomed;
   end;
@@ -142,6 +149,7 @@ type
   private
     function adjustAspectRatio: boolean;
     function blackOut: boolean;
+    function checkScreenLimits: boolean;
     function clearMediaMetaData: boolean;
     function clipboardCurrentFileName: boolean;
     function currentFilePath: string;
@@ -160,6 +168,8 @@ type
     function fullScreen: boolean;
     function getFileSize(const aFilePath: string): int64;
     function getINIname: string;
+    function getScreenHeight: integer;
+    function getScreenWidth: integer;
     function goDown: boolean;
     function goLeft: boolean;
     function goRight: boolean;
@@ -239,6 +249,9 @@ begin
   vRatio := Y / X;
 
   UI.Height := trunc(UI.Width * vRatio);
+
+  checkScreenLimits;
+  UI.showHelpWindow(FALSE);
 end;
 
 function TFX.blackOut: boolean;
@@ -262,6 +275,25 @@ begin
   UI.lblVideoBitRate.Caption  := format('VR:', []);
   UI.lblXYRatio.Caption       := format('XY:', []);
   UI.lblFileSize.Caption      := format('FS:', []);
+end;
+
+function TFX.checkScreenLimits: boolean;
+// checks whether the UI window is taller than the height of the screen and readjusts until it isn't
+// this can happen with some phone videos which were filmed in portrait, e.g. Vines and Tiktoks.
+// Purely for completeness, we also check the width.
+begin
+  var rect := screen.WorkAreaRect; // the screen minus the taskbar, which we assume is at the bottom of the desktop
+  case UI.Height > rect.bottom - rect.top of TRUE:  begin
+                                                      UI.width := trunc(UI.width * 0.90);   // Yes, adjust the width!!...
+                                                      adjustAspectRatio;                    // ...then let adjustAspectRatio do the rest
+                                                      doCentreWindow; end;end;
+
+  case UI.Width > rect.right - rect.left of TRUE:  begin
+                                                      UI.width := trunc(UI.width * 0.90);
+                                                      adjustAspectRatio;
+                                                      doCentreWindow; end;end;
+
+  UI.showHelpWindow(FALSE);
 end;
 
 function TFX.clipboardCurrentFileName: boolean;
@@ -338,8 +370,10 @@ var
 begin
   GetWindowRect(UI.Handle, vR);
 
-  SetWindowPos(UI.Handle, 0,  (GetSystemMetrics(SM_CXVIRTUALSCREEN) - (vR.Right - vR.Left)) div 2,
-                              (GetSystemMetrics(SM_CYVIRTUALSCREEN) - (vR.Bottom - vR.Top)) div 2, 0, 0, SWP_NOZORDER + SWP_NOSIZE);
+  SetWindowPos(UI.Handle, 0,  (getScreenWidth - (vR.Right - vR.Left)) div 2,
+                              (getScreenHeight - (vR.Bottom - vR.Top)) div 2, 0, 0, SWP_NOZORDER + SWP_NOSIZE);
+
+  UI.showHelpWindow(FALSE);
 end;
 
 function TFX.doCommandLine(aCommandLIne: string): boolean;
@@ -366,18 +400,23 @@ begin
 end;
 
 function TFX.doMiniWindow: boolean;
-// [4] = Mini Window top right corner of screen, to one of the [4] corners
+// [4] = Mini Window top right corner of screen, i.e. to one of the [4] corners
+// Ctrl-[4] will maintain the current size of the window
 var
   vR: TRect;
 begin
   GetWindowRect(UI.Handle, vR);
-  SetWindowPos(UI.Handle, 0,  (GetSystemMetrics(SM_CXVIRTUALSCREEN) - (vR.Right - vR.Left)) div 2,
-                              (GetSystemMetrics(SM_CYVIRTUALSCREEN) - (vR.Bottom - vR.Top)) div 2, 400, 400, SWP_NOZORDER);
-  adjustAspectRatio;
 
-  GetWindowRect(UI.Handle, vR);
-  SetWindowPos(UI.Handle, 0,  (GetSystemMetrics(SM_CXVIRTUALSCREEN) - UI.Width - 18),
-                              (0 + 30), 0, 0, SWP_NOZORDER + SWP_NOSIZE);
+  case isControlKeyDown of FALSE: begin
+                                    SetWindowPos(UI.Handle, 0, (getScreenWidth - (vR.Right - vR.Left)) div 2,
+                                                               (getScreenHeight - (vR.Bottom - vR.Top)) div 2, 400, 400, SWP_NOZORDER);
+                                    adjustAspectRatio;
+
+                                    GetWindowRect(UI.Handle, vR); // reposition the window after adjusting the aspect ratio
+                                  end;end;
+
+  //  Right - 18 to avoid the scrollbars of other [maximized] windows; Top + 30 to avoid the system icons of other [maximized] windows;.
+  SetWindowPos(UI.Handle, 0, (getScreenWidth - UI.Width - 18), (0 + 30), 0, 0, SWP_NOZORDER + SWP_NOSIZE);
 end;
 
 function TFX.doMuteUnmute: boolean;
@@ -499,6 +538,17 @@ begin
   result := ExtractFilePath(currentFilePath) + result;
 end;
 
+function TFX.getScreenHeight: integer;
+begin
+  var rect := screen.WorkAreaRect; // the screen minus the taskbar
+  result := rect.Bottom - rect.Top;
+end;
+
+function TFX.getScreenWidth: integer;
+begin
+  result := GetSystemMetrics(SM_CXVIRTUALSCREEN); // we'll assume that the taskbar is in it's usual place at the bottom of the screen
+end;
+
 // When the video is zoomed in or out, the CTRL key plus the UP, DOWN, LEFT, RIGHT arrow keys can be used to reposition the video
 // Bizarrely, if WMP is paused and repositioned, it will revert its position when playback is resumed;
 //            if WMP is repositioned during zoomed playback then paused, it will revert its position.
@@ -581,7 +631,7 @@ begin
 
   vS :=  UI.ClientToScreen(vR);
 
-  result := vS.Bottom > GetSystemMetrics(SM_CYVIRTUALSCREEN);
+  result := vS.Bottom > getScreenHeight;
 end;
 
 function TFX.keepCurrentFile: boolean;
@@ -607,6 +657,7 @@ end;
 function TFX.matchVideoWidth: boolean;
 // [9] = resize the width of the window to match the video width.
 // Judicious use of [9], ad[J]ust, [H]orizontal and [G]reater can be used to obtain the optimum window to match the video.
+// [4], [H], [G] can alos be very useful.
 begin
   case noMediaFiles of TRUE: EXIT; end;
 
@@ -628,11 +679,12 @@ function TFX.openWithShotcut: boolean;
 // This can simpifly things when multiple nested double quotes and apostrophes are being used to construct a command line
 // At some point, the user's preferred video editor needs to be configurable via an application INI file.
 // *https://shotcut.org/
+// Amended to use ShellExecute. It handles the space in "Program Files" just fine, which the current implementation of doCommandLine doesn't.
 begin
   case noMediaFiles of TRUE: EXIT; end;
 
   UI.WMP.controls.pause;
-  doCommandLine('C:\ProgramFiles\Shotcut\shotcut.exe "' + currentFilePath + '"');
+  shellExecute(0, 'open', 'C:\Program Files\Shotcut\shotcut.exe', pchar('"' + currentFilePath + '"'), '', SW_SHOW);
 end;
 
 function TFX.playCurrentFile: boolean;
@@ -697,16 +749,18 @@ end;
 
 function TFX.playWithPotPlayer: boolean;
 // [P] = Play with [P]otPlayer
-// At some point, the user's preferred alternative media player needs to be picked up from a mediaplayer.ini file
+// At some point, the user's preferred alternative media player needs to be picked up from a .ini file
+// Amended to use ShellExecute. It handles the space in "Program Files" just fine, which the current implementation of doCommandLine doesn't.
+// Amended to use the default PotPlayer installation location
 begin
   UI.WMP.controls.pause;
-  doCommandLine('B:\Tools\Pot\PotPlayerMini64.exe "' + currentFilePath + '"');
+  ShellExecute(0, 'open', 'C:\Program Files\DAUM\PotPlayer\PotPlayerMini64.exe', pchar('"' + currentFilePath + '"'), '', SW_SHOW);
 end;
 
 function TFX.rateReset: boolean;
 // [1] = reset the playback rate to 100%
 begin
-  UI.WMP.settings.rate    := 1;
+  UI.WMP.settings.rate := 1;
   FX.updateRateLabel;
 end;
 
@@ -714,11 +768,11 @@ function TFX.reloadMediaFiles: boolean;
 // [L] = re[L]oad the list of video files from the current folder
 // Previously, a facility existed whereby if MediaPlayer was launched with the CAPS LOCK key on,
 //    only video files greater than 100MB in size would be loaded into the file list.
-// This allowed folders to be examined to quicly keep or delete the largest videos.
+// This allowed folders to be examined to quickly keep or delete the largest videos.
 // This reloadMediaFiles function could than be used to re-find all files in the current folder regardless of size,
 //    without having to close and restart the app *without* the CAPS LOCK key on.
-// Typically, this was actually because the user had launched MediaPlayer forgetting that the CAPS LOCK key was on.
-// The CAPS LOCK key has now been repurposed for something else (see FormCreate) so for the time being this function isn't as useful as it was.
+// Typically, this was actually because the user had launched MediaPlayer forgetting that the CAPS LOCK key was on!
+// The CAPS LOCK key has now been repurposed for something else (see FormCreate) so for the time being this function isn't as useful as it once was - sic transit gloria mundi!
 begin
   GV.playIx := findMediaFilesInFolder(currentFilePath, GV.playlist);
   windowCaption;
@@ -766,6 +820,7 @@ begin
   UI.resizeWindow3(Shift);
   adjustAspectRatio;
   doCentreWindow;
+  UI.showHelpWindow(FALSE);
   windowCaption;
 end;
 
@@ -935,7 +990,6 @@ end;
 function TFX.UIKeyUp(var Key: Word; Shift: TShiftState): boolean;
 begin
 try
-//  case key = 18 of TRUE: tabForwardsBackwards(50); end;
   case UIKey(Key, Shift, TRUE) of TRUE: EXIT; end;  // Keys that can be pressed singly or held down for repeat action: don't process the KeyUp as well as the KeyDown
 
   case Key of
@@ -988,6 +1042,7 @@ try
     ord('7')          : deleteBookmark;                       // 7 = delete INI file containing bookmarked position (bookmark)
     ord('8')          : UI.repositionWMP;                     // 8 = reposition WMP to eliminate border pixels
     ord('9')          : matchVideoWidth;                      // 9 = match window width to video width
+    VK_SHIFT          : UI.showHideHelp;                      // Either [SHIFT] key = show the help panel with all these keyboard controls
   end;
 finally
   UpdateTimeDisplay;
@@ -1122,7 +1177,8 @@ var vSysMenu: HMENU;
 begin
   vSysMenu := GetSystemMenu(Handle, False);
   AppendMenu(vSysMenu, MF_SEPARATOR, 0, '');
-  AppendMenu(vSysMenu, MF_STRING, MENU_ID, '&About Minimalist Media Player…');
+  AppendMenu(vSysMenu, MF_STRING, MENU_ABOUT_ID, '&About Minimalist Media Player…');
+  AppendMenu(vSysMenu, MF_STRING, MENU_HELP_ID, 'Show &Keyboard functions');
 end;
 
 procedure TUI.applicationEventsMessage(var Msg: tagMSG; var Handled: Boolean);
@@ -1147,9 +1203,20 @@ begin
                                             end;end;
 end;
 
+function TUI.fakeSystemMenu: boolean;
+// There's a problem with showing additional Delphi forms in applications with an active Windows Media Player component.
+// The forms will flash up momentarily but will then disappear.
+// The only solution I have found so far is to add menu items for the windows in the System Menu (alt-space) of the application (see TUI.addMenuItem).
+// We can then show the window by sending the menu id, thereby mimicking the user selecting it.
+// We do this both for the About Box and the Help Window.
+// fakeSystemMenu allows the user to trigger the menu item for the Help Window using the [SHIFT] keyboard shortcut in TFX.UIKeyUp
+begin
+  SendMessage(Handle, WM_SYSCOMMAND, MENU_HELP_ID, 0);
+end;
+
 procedure TUI.FormActivate(Sender: TObject);
 begin
-  showInfo(GV.appReleaseVersion);
+//  showInfo(GV.appReleaseVersion);
 end;
 
 procedure TUI.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -1226,6 +1293,11 @@ begin
   GV.startup := TRUE;                               // used in FormResize to initially left-justify the application window if required
 end;
 
+procedure TUI.FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  case (ssAlt in Shift) and ((Key = 84) or (Key = 116)) of TRUE: begin FX.tabForwardsBackwards; Key := 0; end;end; // alt-t or alt-T = Tab forwards/backwards n%      Mods: ALT-T, SHIFT-T, CAPSLOCK, Ctrl-T
+end;
+
 procedure TUI.FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
 begin
   WMP.cursor := crDefault;  // gets reset to crNone in tmrTimeDisplay event
@@ -1240,6 +1312,7 @@ begin
 
   repositionLabels;
   repositionWMP;
+  showHelpWindow(FALSE); // reposition the help window if it's open but don't create it if it's not
 end;
 
 function TUI.hideLabels: boolean;
@@ -1348,9 +1421,13 @@ end;
 
 function TUI.resizeWindow1: boolean;
 // default window size, called by FormCreate when the CAPS LOCK key isn't down
+// Modified to just set a default width for the window. Playing the initial video clip and automatically adjusting the aspect ratio will set the height.
+// NB HKEY_CURRENT_USER\SOFTWARE\Classes\Applications\MinimalistMediaPlayer.exe\shell\open\command
 begin
-  UI.Width   := trunc(780 * 1.5);
-  UI.Height  := trunc(460 * 1.5);
+  var vWidth: integer;
+  case TryStrToInt(paramStr(2), vWidth) of FALSE: vWidth := 1170; end;
+  UI.Width   := trunc(vWidth);
+  FX.doCentreWindow;
 end;
 
 function TUI.resizeWindow2: boolean;
@@ -1406,10 +1483,23 @@ begin
   end;
 end;
 
+function TUI.showHelpWindow(create: boolean = TRUE): boolean;
+begin
+  var vPt := ClientToScreen(point(WMP.left + WMP.width - 17, WMP.top + 1)); // screen position of the top right corner of the application window, roughly.
+  showHelp(vPt, create);
+end;
+
 function TUI.showMediaCaption: boolean;
 begin
   lblMediaCaption.Visible := TRUE;
   tmrMediaCaption.Enabled := TRUE;
+end;
+
+function TUI.showHideHelp: boolean;
+begin
+  GV.showingHelp := NOT GV.showingHelp;
+  case GV.showingHelp of  TRUE: fakeSystemMenu;
+                         FALSE: shutHelp; end;
 end;
 
 function TUI.showInfo(aInfo: string): boolean;
@@ -1463,6 +1553,7 @@ end;
 
 procedure TUI.tmrTimeDisplayTimer(Sender: TObject);
 // update the video timestamp display
+// This is also a convenient time and place to hide the cursor
 begin
   FX.UpdateTimeDisplay;
   WMP.Cursor := crNone;
@@ -1556,6 +1647,7 @@ const
   SC_DRAGMOVE = $F012;
 begin
   Perform(WM_SYSCOMMAND, SC_DRAGMOVE, 0);
+  showHelpWindow(FALSE); // move the help window, if any, with the main window, but don't create one
 end;
 
 procedure TUI.WMPMouseMove(ASender: TObject; nButton, nShiftState: SmallInt; fX, fY: Integer);
@@ -1593,7 +1685,8 @@ end;
 procedure TUI.WMSysCommand(var Message: TWMSysCommand);
 begin
   inherited;
-  case Message.CmdType of MENU_ID:  showAboutBox; end;
+  case Message.CmdType of MENU_ABOUT_ID:  showAboutBox; end;
+  case Message.CmdType of MENU_HELP_ID:   showHelpWindow; end;
 end;
 
 { TGV }
