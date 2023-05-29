@@ -20,7 +20,7 @@ program MinimalistMediaPlayer;
 
 uses
   Vcl.Forms,
-  main in 'main.pas' {UI},
+  main in 'main.pas' {MMPUI},
   FormInputBox in 'FormInputBox.pas' {InputBoxForm},
   Vcl.Themes,
   Vcl.Styles,
@@ -28,16 +28,19 @@ uses
   MMDevApi_tlb in 'MMDevApi_tlb.pas',
   FormAbout in 'FormAbout.pas' {AboutForm},
   WMPLib_TLB in 'B:\Documents\Embarcadero\Studio\21.0\Imports\WMPLib_TLB.pas',
-  FormHelp in 'FormHelp.pas' {HelpForm};
+  FormHelp in 'FormHelp.pas' {HelpForm},
+  _debugWindow in '..\DebugWindow\_debugWindow.pas';
 
 {$R *.res}
 
 begin
   ReportMemoryLeaksOnShutdown := TRUE;
 
+  debugClear;
+
   Application.Initialize;
   Application.MainFormOnTaskbar := True;
-  Application.CreateForm(TUI, UI);
+  Application.CreateForm(TMMPUI, UI);
   try
     Application.Run;
   except

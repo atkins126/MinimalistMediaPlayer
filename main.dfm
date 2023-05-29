@@ -1,4 +1,4 @@
-object UI: TUI
+object MMPUI: TMMPUI
   Left = 0
   Top = 0
   BorderIcons = [biSystemMenu]
@@ -7257,5 +7257,12 @@ object UI: TUI
     OnTimer = tmrMediaCaptionTimer
     Left = 400
     Top = 304
+  end
+  object tmrResize: TTimer
+    Enabled = False
+    Interval = 10
+    OnTimer = tmrResizeTimer
+    Left = 488
+    Top = 112
   end
 end
