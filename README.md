@@ -106,7 +106,7 @@ So, firstly, I make full use of all 180 columns of my editor.
 
 3. I like to experiment with different ways of separating out the User Interface definition from the general program logic and how application-wide variables should be handled. For this project, all three are still located in main.pas, but on a much larger project with multiple units, the way I've separated them out could be adopted, placing them all in separate units. My only criticism of Delphi, going all the way back to v1, is the way it (and all the many books) encourages all code to be contained within the form's unit and event handler procedures. It's taken us too long to finally break away from that paradigm, in my opinion. My view is that you should write so that an entirely new UI can be created and then just hooked up to the back-end program logic.
 
-4. Despite falling in love with Delphi since the moment I unboxed v1, I loathe and detest BEGIN...END with a passion {I definitely have Curly Brace Envy}. As such, I try to find ways to make my code look much neater, which includes not have every END on a separate line, as you will see :D
+4. Despite falling in love with Delphi since the moment I unboxed v1, I loathe and detest BEGIN...END with a passion {I definitely have Curly Brace Envy}. As such, I try to find ways to make my code look much neater, which includes not having every END on a separate line, as you will see :D
 
 5. All methods that I write (as opposed to IDE-created event handler procedures, etc.) are defined as functions with a default boolean return value.
 
@@ -123,6 +123,8 @@ If you find ``Minimalist Media Player`` useful and you have suggestions for impr
 MPlayer vs Microsoft Media Foundation vs Windows Media Player
 --------------
 Ultimately, I would like to replace Windows Media Player as the video renderer and make ``Minimalist Media Player`` a front-end for MPlayer with its superior video-handling capabilities, or possibly Microsoft Media Foundation / MfPack (I would appreciate some advice on which would be the most up-to-date approach). For instance, WMP really doesn't do Frame Backwards properly (it goes back 1 second not 1 frame!), and I also had to comment out the video scrubbing facility (dragging the mouse along the progress bar to quickly scan through a video - WMP gets in a right pickle!). If you would like to implement MPlayer or MMF/MfPack (whichever would provide the richest functionality going forward) to replace WMP, please be my guest!!
+
+EDIT: I am currently beta-testing a complete rewrite of this project based on MPV! ``MinimalistMediaPlayerX`` will be released into the wild in a matter of weeks. Stay tuned.
 
 And finally, Esther...
 ------------------
